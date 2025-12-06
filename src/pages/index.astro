@@ -1,99 +1,41 @@
 ---
-import '../styles/global.css';
-
-const IS_PINTEREST = !!import.meta.env.PUBLIC_PINTEREST_URL;
+import "../styles/global.css";
 ---
 
 <html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<meta name="viewport" content="width=device-width" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Random Image Draw</title>
-	</head>
-	<body class="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center p-4">
-		<main class="w-full flex flex-col items-center gap-6">
-			<div class="flex justify-center max-w-[100vw] max-h-[calc(100vh-8rem)]">
-				<img
-					id="random-image"
-					src=""
-					alt="Random image"
-					class="max-w-full max-h-full w-auto h-auto object-contain transition-opacity duration-300"
-				/>
-			</div>
-			<div class="flex justify-center">
-				<button
-					id="random-button"
-					class="px-6 py-3 bg-blue-600 dark:bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:ring-offset-2 dark:focus:ring-offset-gray-900 transition-colors duration-200"
-				>
-					Random
-				</button>
-			</div>
-		</main>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="generator" content={Astro.generator} />
+    <title>Random Image Draw</title>
+  </head>
+  <body
+    class="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center p-4"
+  >
+    <main class="w-full max-w-6xl mx-auto flex flex-col items-center gap-6">
+      <div class="w-full">
+        <div
+          class="relative w-full aspect-4/3 min-h-[360px] max-h-[calc(100vh-8rem)] overflow-hidden flex items-center justify-center"
+        >
+          <img
+            id="random-image"
+            src=""
+            alt="Random image"
+            class="absolute inset-0 w-full h-full object-contain transition-opacity duration-500 ease-in-out"
+          />
+        </div>
+      </div>
+      <div class="flex justify-center">
+        <button
+          id="random-button"
+          class="px-6 py-3 bg-blue-600 dark:bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:ring-offset-2 dark:focus:ring-offset-gray-900 transition-colors duration-200"
+        >
+          Random
+        </button>
+      </div>
+    </main>
 
-		<script define:vars={{ isPinterest: IS_PINTEREST }}>
-			const IS_PINTEREST = isPinterest;
-			let images = [];
-
-			async function loadImages() {
-				try {
-					// Always load from cached images-list.json (generated at build time)
-					const response = await fetch('/images-list.json');
-					images = await response.json();
-					
-					if (images.length > 0) {
-						showRandomImage();
-					} else {
-						const imgElement = document.getElementById('random-image');
-						if (imgElement) {
-							imgElement.alt = IS_PINTEREST 
-								? 'No images found from Pinterest URL.' 
-								: 'No images found. Please add images to the public/images/ directory or set PUBLIC_PINTEREST_URL.';
-							imgElement.style.display = 'none';
-						}
-					}
-				} catch (error) {
-					console.error('Failed to load images:', error);
-					const imgElement = document.getElementById('random-image');
-					if (imgElement) {
-						imgElement.alt = 'Failed to load images.';
-						imgElement.style.display = 'none';
-					}
-				}
-			}
-
-			function showRandomImage() {
-				if (images.length === 0) return;
-
-				const randomIndex = Math.floor(Math.random() * images.length);
-				const imgElement = document.getElementById('random-image');
-				
-				if (imgElement) {
-					imgElement.style.opacity = '0';
-					setTimeout(() => {
-						// Pinterest URLs are full URLs, local images are relative paths
-						if (IS_PINTEREST) {
-							imgElement.src = images[randomIndex];
-						} else {
-							imgElement.src = `/images/${images[randomIndex]}`;
-						}
-						imgElement.style.opacity = '1';
-					}, 150);
-				}
-			}
-
-			function handleRandomClick() {
-				showRandomImage();
-			}
-
-			document.addEventListener('DOMContentLoaded', () => {
-				loadImages();
-				const button = document.getElementById('random-button');
-				if (button) {
-					button.addEventListener('click', handleRandomClick);
-				}
-			});
-		</script>
-	</body>
+    <script src="../scripts/random.ts"></script>
+  </body>
 </html>

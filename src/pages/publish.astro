@@ -1,0 +1,175 @@
+---
+import '../styles/global.css';
+
+const PUBLISH_PASSWORD = import.meta.env.PUBLISH_PASSWORD;
+const NETLIFY_BUILD_HOOK_URL = import.meta.env.NETLIFY_BUILD_HOOK_URL;
+
+let message = '';
+let success = false;
+let buildTriggered = false;
+
+if (Astro.request.method === 'POST') {
+	const formData = await Astro.request.formData();
+	const password = formData.get('password');
+
+	if (!PUBLISH_PASSWORD || !NETLIFY_BUILD_HOOK_URL) {
+		message = 'Server configuration error. Environment variables not set.';
+	} else if (password === PUBLISH_PASSWORD) {
+		try {
+			const response = await fetch(NETLIFY_BUILD_HOOK_URL, { method: 'POST' });
+			if (response.ok) {
+				success = true;
+				buildTriggered = true;
+				message = 'Build triggered! Watching for progress...';
+			} else {
+				message = `Failed to trigger build: ${response.status}`;
+			}
+		} catch (error) {
+			message = 'Failed to trigger build. Please try again.';
+		}
+	} else {
+		message = 'Incorrect password.';
+	}
+}
+---
+
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<meta name="viewport" content="width=device-width" />
+		<title>Publish - RandoDraw</title>
+	</head>
+	<body class="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center p-4">
+		<main class="w-full max-w-sm">
+			<div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+				<h1 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+					Publish Updates
+				</h1>
+				<p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+					Trigger a rebuild to sync the latest images from Google Drive.
+				</p>
+
+				<!-- Deploy Status -->
+				<div id="status-container" class="mb-4 p-3 rounded-md bg-gray-50 dark:bg-gray-700">
+					<div class="flex items-center gap-2">
+						<div id="status-indicator" class="w-2.5 h-2.5 rounded-full bg-gray-400"></div>
+						<span id="status-text" class="text-sm text-gray-600 dark:text-gray-300">Checking status...</span>
+					</div>
+					<div id="status-details" class="text-xs text-gray-500 dark:text-gray-400 mt-1 hidden"></div>
+				</div>
+
+				{message && (
+					<div id="message" class={`mb-4 p-3 rounded-md text-sm ${success ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200' : 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'}`}>
+						{message}
+					</div>
+				)}
+
+				<form method="POST">
+					<label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+						Password
+					</label>
+					<input
+						type="password"
+						id="password"
+						name="password"
+						required
+						class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-blue-500 dark:focus:border-blue-400 mb-4"
+					/>
+					<button
+						type="submit"
+						id="submit-btn"
+						class="w-full px-4 py-2 bg-blue-600 dark:bg-blue-500 text-white font-semibold rounded-md hover:bg-blue-700 dark:hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:ring-offset-2 dark:focus:ring-offset-gray-800 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+					>
+						Publish
+					</button>
+				</form>
+
+				<a href="/" class="block text-center text-sm text-blue-600 dark:text-blue-400 hover:underline mt-4">
+					&larr; Back to gallery
+				</a>
+			</div>
+		</main>
+
+		<script define:vars={{ buildTriggered }}>
+			const statusIndicator = document.getElementById('status-indicator');
+			const statusText = document.getElementById('status-text');
+			const statusDetails = document.getElementById('status-details');
+			const submitBtn = document.getElementById('submit-btn');
+			const messageEl = document.getElementById('message');
+
+			const stateConfig = {
+				new: { color: 'bg-yellow-400', text: 'Queued' },
+				pending: { color: 'bg-yellow-400', text: 'Queued' },
+				building: { color: 'bg-yellow-400 animate-pulse', text: 'Building...' },
+				uploading: { color: 'bg-yellow-400 animate-pulse', text: 'Uploading...' },
+				uploaded: { color: 'bg-yellow-400', text: 'Processing...' },
+				processing: { color: 'bg-yellow-400 animate-pulse', text: 'Processing...' },
+				ready: { color: 'bg-green-500', text: 'Live' },
+				error: { color: 'bg-red-500', text: 'Failed' },
+				unknown: { color: 'bg-gray-400', text: 'Unknown' },
+			};
+
+			let polling = buildTriggered;
+			let pollInterval = null;
+
+			async function fetchStatus() {
+				try {
+					const res = await fetch('/api/deploy-status');
+					const data = await res.json();
+
+					if (data.error) {
+						statusText.textContent = 'Status unavailable';
+						return null;
+					}
+
+					const config = stateConfig[data.state] || stateConfig.unknown;
+					statusIndicator.className = `w-2.5 h-2.5 rounded-full ${config.color}`;
+					statusText.textContent = config.text;
+
+					if (data.state === 'ready' && data.deployTime) {
+						statusDetails.textContent = `Deployed in ${data.deployTime}s`;
+						statusDetails.classList.remove('hidden');
+					} else if (data.state === 'error' && data.error) {
+						statusDetails.textContent = data.error;
+						statusDetails.classList.remove('hidden');
+					} else {
+						statusDetails.classList.add('hidden');
+					}
+
+					return data.state;
+				} catch (e) {
+					statusText.textContent = 'Status unavailable';
+					return null;
+				}
+			}
+
+			async function pollStatus() {
+				const state = await fetchStatus();
+
+				if (state === 'ready' || state === 'error') {
+					polling = false;
+					if (pollInterval) {
+						clearInterval(pollInterval);
+						pollInterval = null;
+					}
+					submitBtn.disabled = false;
+
+					if (state === 'ready' && messageEl) {
+						messageEl.textContent = 'Build completed successfully!';
+						messageEl.className = 'mb-4 p-3 rounded-md text-sm bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200';
+					}
+				}
+			}
+
+			// Initial fetch
+			fetchStatus();
+
+			// Start polling if build was triggered
+			if (polling) {
+				submitBtn.disabled = true;
+				pollInterval = setInterval(pollStatus, 3000);
+			}
+		</script>
+	</body>
+</html>

@@ -3,21 +3,22 @@
   "type": "module",
   "version": "0.0.1",
   "scripts": {
-    "generate-images": "tsx scripts/generate-image-list.ts",
-    "dev": "npm run generate-images && astro dev",
+    "generate-images": "node --env-file=.env --import=tsx scripts/generate-image-list.ts",
+    "dev": "astro dev",
+    "dev:sync": "npm run generate-images && astro dev",
     "build": "npm run generate-images && astro build",
     "preview": "astro preview",
     "astro": "astro"
   },
   "dependencies": {
+    "@astrojs/netlify": "^6.6.4",
     "@tailwindcss/vite": "^4.1.17",
     "astro": "^5.16.2",
-    "cheerio": "^1.1.2",
+    "sharp": "^0.34.5",
     "tailwindcss": "^4.1.17"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
-    "dotenv": "^17.2.3",
     "tsx": "^4.20.6"
   }
 }

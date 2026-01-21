@@ -3,6 +3,10 @@ dist/
 # generated types
 .astro/
 
+# generated images (synced from Google Drive at build time)
+public/images/
+public/images-list.json
+
 # dependencies
 node_modules/
 
@@ -22,3 +26,6 @@ pnpm-debug.log*
 
 # jetbrains setting folder
 .idea/
+
+# Local Netlify folder
+.netlify

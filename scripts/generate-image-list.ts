@@ -1,225 +1,119 @@
-import { readdir } from 'fs/promises';
-import { writeFile } from 'fs/promises';
-import { join } from 'path';
-import * as cheerio from 'cheerio';
-import { config } from 'dotenv';
+import { writeFile, mkdir, rm } from 'fs/promises';
+import { join, parse } from 'path';
+import sharp from 'sharp';
 
-// Load environment variables from .env file
-config();
+const GOOGLE_DRIVE_FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID;
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
+const MAX_DIMENSION = 1920;
 
-async function fetchPinterestImages(pinterestUrl: string): Promise<string[]> {
-	try {
-		console.log(`Fetching images from Pinterest: ${pinterestUrl}`);
-		
-		// Handle boardId URL format - convert to RSS feed if possible
-		let urlToFetch = pinterestUrl;
-		const boardIdMatch = pinterestUrl.match(/boardId=(\d+)/);
-		if (boardIdMatch) {
-			const boardId = boardIdMatch[1];
-			// Try Pinterest RSS feed format
-			urlToFetch = `https://www.pinterest.com/board/${boardId}/feed.rss`;
-			console.log(`Trying RSS feed format: ${urlToFetch}`);
-		}
-		
-		const response = await fetch(urlToFetch, {
-			headers: {
-				'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-				'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-			},
+interface DriveFile {
+	id: string;
+	name: string;
+	mimeType: string;
+}
+
+interface DriveListResponse {
+	files: DriveFile[];
+	nextPageToken?: string;
+}
+
+async function listDriveFiles(): Promise<DriveFile[]> {
+	if (!GOOGLE_DRIVE_FOLDER_ID || !GOOGLE_API_KEY) {
+		console.log('Google Drive credentials not configured. Skipping image sync.');
+		return [];
+	}
+
+	const files: DriveFile[] = [];
+	let pageToken: string | undefined;
+
+	do {
+		const params = new URLSearchParams({
+			q: `'${GOOGLE_DRIVE_FOLDER_ID}' in parents and (mimeType contains 'image/')`,
+			key: GOOGLE_API_KEY,
+			fields: 'files(id,name,mimeType),nextPageToken',
+			pageSize: '100',
 		});
+
+		if (pageToken) {
+			params.set('pageToken', pageToken);
+		}
+
+		const response = await fetch(
+			`https://www.googleapis.com/drive/v3/files?${params}`
+		);
 
 		if (!response.ok) {
-			// If RSS fails, try original URL
-			if (urlToFetch !== pinterestUrl) {
-				console.log(`RSS feed failed, trying original URL: ${pinterestUrl}`);
-				const fallbackResponse = await fetch(pinterestUrl, {
-					headers: {
-						'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-					},
-				});
-				if (!fallbackResponse.ok) {
-					throw new Error(`Failed to fetch Pinterest page: ${fallbackResponse.status}`);
-				}
-				const html = await fallbackResponse.text();
-				return extractImagesFromHTML(html);
-			}
-			throw new Error(`Failed to fetch Pinterest page: ${response.status}`);
+			const error = await response.text();
+			throw new Error(`Failed to list Drive files: ${response.status} ${error}`);
 		}
 
-		const content = await response.text();
-		
-		// Check if it's RSS/XML format
-		if (content.includes('<?xml') || content.includes('<rss')) {
-			return extractImagesFromRSS(content);
-		}
-		
-		// Otherwise, extract from HTML
-		return extractImagesFromHTML(content);
-	} catch (error) {
-		console.error('Error fetching Pinterest images:', error);
-		throw error;
+		const data: DriveListResponse = await response.json();
+		files.push(...data.files);
+		pageToken = data.nextPageToken;
+	} while (pageToken);
+
+	return files;
+}
+
+async function downloadAndProcessFile(fileId: string, fileName: string, outputDir: string): Promise<string> {
+	// Use direct download URL for publicly shared files
+	const response = await fetch(
+		`https://drive.google.com/uc?export=download&id=${fileId}`
+	);
+
+	if (!response.ok) {
+		throw new Error(`Failed to download ${fileName}: ${response.status}`);
 	}
-}
 
-function extractImagesFromRSS(rssContent: string): string[] {
-	const imageUrls: string[] = [];
-	const $ = cheerio.load(rssContent, { xmlMode: true });
-	
-	// Extract image URLs from RSS items
-	$('item').each((_, element) => {
-		const description = $(element).find('description').text();
-		const enclosure = $(element).find('enclosure').attr('url');
-		
-		if (enclosure) {
-			imageUrls.push(enclosure);
-		}
-		
-		// Extract images from description HTML
-		if (description) {
-			const desc$ = cheerio.load(description);
-			desc$('img').each((_, img) => {
-				const src = desc$(img).attr('src');
-				if (src && !imageUrls.includes(src)) {
-					imageUrls.push(src);
-				}
-			});
-		}
-	});
-	
-	return imageUrls;
-}
+	const buffer = Buffer.from(await response.arrayBuffer());
+	const outputName = `${parse(fileName).name}.webp`;
 
-function extractImagesFromHTML(html: string): string[] {
-	const $ = cheerio.load(html);
-	const imageUrls: string[] = [];
+	await sharp(buffer)
+		.resize(MAX_DIMENSION, MAX_DIMENSION, {
+			fit: 'inside',
+			withoutEnlargement: true,
+		})
+		.webp({ quality: 80 })
+		.toFile(join(outputDir, outputName));
 
-		// Extract images from Pinterest's JSON-LD structured data
-		$('script[type="application/ld+json"]').each((_, element) => {
-			try {
-				const jsonData = JSON.parse($(element).html() || '{}');
-				if (jsonData.image) {
-					if (Array.isArray(jsonData.image)) {
-						jsonData.image.forEach((img: string | { url?: string }) => {
-							const url = typeof img === 'string' ? img : img.url;
-							if (url && !imageUrls.includes(url)) {
-								imageUrls.push(url);
-							}
-						});
-					} else if (typeof jsonData.image === 'string') {
-						if (!imageUrls.includes(jsonData.image)) {
-							imageUrls.push(jsonData.image);
-						}
-					} else if (jsonData.image.url) {
-						if (!imageUrls.includes(jsonData.image.url)) {
-							imageUrls.push(jsonData.image.url);
-						}
-					}
-				}
-			} catch (e) {
-				// Skip invalid JSON
-			}
-		});
-
-		// Extract images from img tags with Pinterest-specific attributes
-		$('img').each((_, element) => {
-			const src = $(element).attr('src') || $(element).attr('data-pin-media') || $(element).attr('data-lazy');
-			if (src && (src.includes('pinimg.com') || src.includes('pinterest.com'))) {
-				if (!imageUrls.includes(src)) {
-					// Convert to higher quality if available
-					let highQualitySrc = src;
-					if (src.includes('pinimg.com')) {
-						highQualitySrc = src.replace(/\/\d+x\//, '/originals/').replace(/\/\d+x\d+\//, '/originals/');
-					}
-					imageUrls.push(highQualitySrc);
-				}
-			}
-		});
-
-		// Extract from all script tags that might contain Pinterest data
-		$('script').each((_, element) => {
-			try {
-				const content = $(element).html();
-				if (!content) return;
-				
-				// Try to find Pinterest initial state
-				const stateMatch = content.match(/__PINTEREST_INITIAL_STATE__\s*=\s*({.*?});/s);
-				if (stateMatch) {
-					const state = JSON.parse(stateMatch[1]);
-					const extractImages = (obj: any, depth = 0): void => {
-						if (depth > 10) return; // Prevent infinite recursion
-						if (typeof obj === 'string' && (obj.includes('pinimg.com') || obj.match(/\.(jpg|jpeg|png|gif|webp)$/i))) {
-							if (!imageUrls.includes(obj)) {
-								imageUrls.push(obj);
-							}
-						} else if (Array.isArray(obj)) {
-							obj.forEach(item => extractImages(item, depth + 1));
-						} else if (obj && typeof obj === 'object') {
-							Object.values(obj).forEach(value => extractImages(value, depth + 1));
-						}
-					};
-					extractImages(state);
-				}
-				
-				// Also look for image URLs in any JSON-like structures
-				const urlMatches = content.match(/https?:\/\/[^"'\s]+pinimg\.com[^"'\s]+\.(jpg|jpeg|png|gif|webp)/gi);
-				if (urlMatches) {
-					urlMatches.forEach(url => {
-						if (!imageUrls.includes(url)) {
-							imageUrls.push(url);
-						}
-					});
-				}
-			} catch (e) {
-				// Skip if parsing fails
-			}
-		});
-
-	// Filter to only valid image URLs and remove duplicates
-	const uniqueImages = Array.from(new Set(imageUrls.filter(url => 
-		url && (url.includes('pinimg.com') || url.match(/\.(jpg|jpeg|png|gif|webp)$/i))
-	)));
-
-	return uniqueImages;
+	return outputName;
 }
 
 async function generateImageList() {
-	const pinterestUrl = process.env.PUBLIC_PINTEREST_URL;
-	
-	try {
-		let imageList: string[] = [];
+	const imagesDir = join(process.cwd(), 'public', 'images');
+	const outputPath = join(process.cwd(), 'public', 'images-list.json');
 
-		if (pinterestUrl) {
-			// Fetch from Pinterest
-			imageList = await fetchPinterestImages(pinterestUrl);
-			console.log(`Fetched ${imageList.length} image(s) from Pinterest`);
-		} else {
-			// Use local images
-			try {
-				const imagesDir = join(process.cwd(), 'public', 'images');
-				const files = await readdir(imagesDir);
-				imageList = files.filter((file) =>
-					/\.(jpg|jpeg|png|gif|webp|svg)$/i.test(file)
-				);
-				console.log(`Found ${imageList.length} local image(s)`);
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-					console.log('Images directory not found. Creating empty list.');
-					imageList = [];
-				} else {
-					throw error;
-				}
-			}
+	try {
+		const driveFiles = await listDriveFiles();
+
+		if (driveFiles.length === 0) {
+			console.log('No images found in Google Drive folder.');
+			await writeFile(outputPath, JSON.stringify([], null, 2), 'utf-8');
+			return;
 		}
-		
-		const outputPath = join(process.cwd(), 'public', 'images-list.json');
-		await writeFile(outputPath, JSON.stringify(imageList, null, 2), 'utf-8');
-		
-		console.log(`Generated images-list.json with ${imageList.length} image(s)`);
+
+		// Clear and recreate images directory
+		await rm(imagesDir, { recursive: true, force: true });
+		await mkdir(imagesDir, { recursive: true });
+
+		console.log(`Processing ${driveFiles.length} image(s) from Google Drive...`);
+
+		// Download and process all images
+		const imageNames: string[] = [];
+		for (const file of driveFiles) {
+			console.log(`  Processing: ${file.name}`);
+			const outputName = await downloadAndProcessFile(file.id, file.name, imagesDir);
+			imageNames.push(outputName);
+		}
+
+		// Generate the image list
+		await writeFile(outputPath, JSON.stringify(imageNames, null, 2), 'utf-8');
+
+		console.log(`Generated images-list.json with ${imageNames.length} image(s) (resized to max ${MAX_DIMENSION}px, converted to WebP)`);
 	} catch (error) {
-		console.error('Error generating image list:', error);
+		console.error('Error syncing images from Google Drive:', error);
 		process.exit(1);
 	}
 }
 
 generateImageList();
-

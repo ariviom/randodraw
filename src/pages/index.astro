@@ -1,7 +1,5 @@
 ---
 import '../styles/global.css';
-
-const IS_PINTEREST = !!import.meta.env.PUBLIC_PINTEREST_URL;
 ---
 
 <html lang="en">
@@ -32,24 +30,19 @@ const IS_PINTEREST = !!import.meta.env.PUBLIC_PINTEREST_URL;
 			</div>
 		</main>
 
-		<script define:vars={{ isPinterest: IS_PINTEREST }}>
-			const IS_PINTEREST = isPinterest;
+		<script>
 			let images = [];
 
 			async function loadImages() {
 				try {
-					// Always load from cached images-list.json (generated at build time)
 					const response = await fetch('/images-list.json');
 					images = await response.json();
-					
 					if (images.length > 0) {
 						showRandomImage();
 					} else {
 						const imgElement = document.getElementById('random-image');
 						if (imgElement) {
-							imgElement.alt = IS_PINTEREST 
-								? 'No images found from Pinterest URL.' 
-								: 'No images found. Please add images to the public/images/ directory or set PUBLIC_PINTEREST_URL.';
+							imgElement.alt = 'No images found. Please add images to the public/images/ directory.';
 							imgElement.style.display = 'none';
 						}
 					}
@@ -72,12 +65,7 @@ const IS_PINTEREST = !!import.meta.env.PUBLIC_PINTEREST_URL;
 				if (imgElement) {
 					imgElement.style.opacity = '0';
 					setTimeout(() => {
-						// Pinterest URLs are full URLs, local images are relative paths
-						if (IS_PINTEREST) {
-							imgElement.src = images[randomIndex];
-						} else {
-							imgElement.src = `/images/${images[randomIndex]}`;
-						}
+						imgElement.src = `/images/${images[randomIndex]}`;
 						imgElement.style.opacity = '1';
 					}, 150);
 				}

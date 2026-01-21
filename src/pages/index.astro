@@ -38,20 +38,25 @@ import '../styles/global.css';
 
 		<script>
 			let images: string[] = [];
-			const preloadedImages: Map<string, HTMLImageElement> = new Map();
+			let currentIndex = -1;
 
 			function preloadAllImages() {
 				for (const name of images) {
 					const img = new Image();
 					img.src = `/images/${name}`;
-					preloadedImages.set(name, img);
 				}
 			}
 
 			function showRandomImage() {
 				if (images.length === 0) return;
 
-				const randomIndex = Math.floor(Math.random() * images.length);
+				// Pick a different image than current
+				let randomIndex: number;
+				do {
+					randomIndex = Math.floor(Math.random() * images.length);
+				} while (randomIndex === currentIndex && images.length > 1);
+				currentIndex = randomIndex;
+
 				const imageName = images[randomIndex];
 				const imgElement = document.getElementById('random-image') as HTMLImageElement | null;
 
@@ -60,20 +65,13 @@ import '../styles/global.css';
 				// Fade out
 				imgElement.style.opacity = '0';
 
-				setTimeout(() => {
-					const preloaded = preloadedImages.get(imageName);
-					if (preloaded?.complete) {
-						// Image already loaded, show immediately
-						imgElement.src = `/images/${imageName}`;
-						imgElement.style.opacity = '1';
-					} else {
-						// Wait for image to load before fading in
-						imgElement.onload = () => {
-							imgElement.style.opacity = '1';
-						};
-						imgElement.src = `/images/${imageName}`;
-					}
-				}, 300);
+				// Load new image off-screen, then swap and fade in
+				const loader = new Image();
+				loader.onload = () => {
+					imgElement.src = loader.src;
+					imgElement.style.opacity = '1';
+				};
+				loader.src = `/images/${imageName}`;
 			}
 
 			async function loadImages() {

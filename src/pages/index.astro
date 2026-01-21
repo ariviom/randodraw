@@ -22,7 +22,7 @@ import '../styles/global.css';
             id="random-image"
             src=""
             alt="Random image"
-            class="absolute inset-0 w-full h-full object-contain transition-opacity duration-500 ease-in-out"
+            class="absolute inset-0 w-full h-full object-contain"
           />
         </div>
       </div>
@@ -42,69 +42,44 @@ import '../styles/global.css';
 
 			function preloadAllImages() {
 				for (const name of images) {
-					const img = new Image();
-					img.src = `/images/${name}`;
+					new Image().src = `/images/${name}`;
 				}
+			}
+
+			function getRandomIndex(): number {
+				if (images.length <= 1) return 0;
+				let index: number;
+				do {
+					index = Math.floor(Math.random() * images.length);
+				} while (index === currentIndex);
+				return index;
 			}
 
 			function showRandomImage() {
 				if (images.length === 0) return;
 
-				// Pick a different image than current
-				let randomIndex: number;
-				do {
-					randomIndex = Math.floor(Math.random() * images.length);
-				} while (randomIndex === currentIndex && images.length > 1);
-				currentIndex = randomIndex;
-
-				const imageName = images[randomIndex];
+				currentIndex = getRandomIndex();
 				const imgElement = document.getElementById('random-image') as HTMLImageElement | null;
-
 				if (!imgElement) return;
 
-				// Fade out
-				imgElement.style.opacity = '0';
-
-				// Load new image off-screen, then swap and fade in
 				const loader = new Image();
-				loader.onload = () => {
-					imgElement.src = loader.src;
-					imgElement.style.opacity = '1';
-				};
-				loader.src = `/images/${imageName}`;
+				loader.onload = () => imgElement.src = loader.src;
+				loader.src = `/images/${images[currentIndex]}`;
 			}
 
-			async function loadImages() {
-				try {
-					const response = await fetch('/images-list.json');
-					images = await response.json();
-					if (images.length > 0) {
-						preloadAllImages();
-						showRandomImage();
-					} else {
-						const imgElement = document.getElementById('random-image') as HTMLImageElement | null;
-						if (imgElement) {
-							imgElement.alt = 'No images found. Please add images to the public/images/ directory.';
-							imgElement.style.display = 'none';
-						}
-					}
-				} catch (error) {
-					console.error('Failed to load images:', error);
-					const imgElement = document.getElementById('random-image') as HTMLImageElement | null;
-					if (imgElement) {
-						imgElement.alt = 'Failed to load images.';
-						imgElement.style.display = 'none';
-					}
-				}
+			async function init() {
+				const response = await fetch('/images-list.json');
+				images = await response.json();
+
+				if (images.length === 0) return;
+
+				preloadAllImages();
+				showRandomImage();
+
+				document.getElementById('random-button')?.addEventListener('click', showRandomImage);
 			}
 
-			document.addEventListener('DOMContentLoaded', () => {
-				loadImages();
-				const button = document.getElementById('random-button');
-				if (button) {
-					button.addEventListener('click', showRandomImage);
-				}
-			});
+			document.addEventListener('DOMContentLoaded', init);
 		</script>
 	</body>
 </html>

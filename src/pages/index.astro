@@ -38,22 +38,42 @@ import '../styles/global.css';
 
 		<script>
 			let images: string[] = [];
+			const preloadedImages: Map<string, HTMLImageElement> = new Map();
+
+			function preloadAllImages() {
+				for (const name of images) {
+					const img = new Image();
+					img.src = `/images/${name}`;
+					preloadedImages.set(name, img);
+				}
+			}
 
 			function showRandomImage() {
 				if (images.length === 0) return;
 
 				const randomIndex = Math.floor(Math.random() * images.length);
-				const imgElement = document.getElementById('random-image');
-				
-				if (imgElement) {
-					imgElement.style.opacity = '0';
-					setTimeout(() => {
-						if (imgElement instanceof HTMLImageElement) {
-							imgElement.src = `/images/${images[randomIndex]}`;
-						}
+				const imageName = images[randomIndex];
+				const imgElement = document.getElementById('random-image') as HTMLImageElement | null;
+
+				if (!imgElement) return;
+
+				// Fade out
+				imgElement.style.opacity = '0';
+
+				setTimeout(() => {
+					const preloaded = preloadedImages.get(imageName);
+					if (preloaded?.complete) {
+						// Image already loaded, show immediately
+						imgElement.src = `/images/${imageName}`;
 						imgElement.style.opacity = '1';
-					}, 150);
-				}
+					} else {
+						// Wait for image to load before fading in
+						imgElement.onload = () => {
+							imgElement.style.opacity = '1';
+						};
+						imgElement.src = `/images/${imageName}`;
+					}
+				}, 300);
 			}
 
 			async function loadImages() {
@@ -61,33 +81,30 @@ import '../styles/global.css';
 					const response = await fetch('/images-list.json');
 					images = await response.json();
 					if (images.length > 0) {
+						preloadAllImages();
 						showRandomImage();
 					} else {
-						const imgElement = document.getElementById('random-image');
-						if (imgElement && imgElement instanceof HTMLImageElement) {
+						const imgElement = document.getElementById('random-image') as HTMLImageElement | null;
+						if (imgElement) {
 							imgElement.alt = 'No images found. Please add images to the public/images/ directory.';
 							imgElement.style.display = 'none';
 						}
 					}
 				} catch (error) {
 					console.error('Failed to load images:', error);
-					const imgElement = document.getElementById('random-image');
-					if (imgElement && imgElement instanceof HTMLImageElement) {
+					const imgElement = document.getElementById('random-image') as HTMLImageElement | null;
+					if (imgElement) {
 						imgElement.alt = 'Failed to load images.';
 						imgElement.style.display = 'none';
 					}
 				}
 			}
 
-			function handleRandomClick() {
-				showRandomImage();
-			}
-
 			document.addEventListener('DOMContentLoaded', () => {
 				loadImages();
 				const button = document.getElementById('random-button');
 				if (button) {
-					button.addEventListener('click', handleRandomClick);
+					button.addEventListener('click', showRandomImage);
 				}
 			});
 		</script>

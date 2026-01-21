@@ -3,9 +3,9 @@
   "type": "module",
   "version": "0.0.1",
   "scripts": {
-    "generate-images": "node --env-file=.env --import=tsx scripts/generate-image-list.ts",
+    "generate-images": "node --import=tsx scripts/generate-image-list.ts",
     "dev": "astro dev",
-    "dev:sync": "npm run generate-images && astro dev",
+    "dev:sync": "node --env-file=.env --import=tsx scripts/generate-image-list.ts && astro dev",
     "build": "npm run generate-images && astro build",
     "preview": "astro preview",
     "astro": "astro"
